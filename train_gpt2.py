@@ -269,7 +269,8 @@ assert total_batch_size % (B * T) == 0
 grad_accumulation_steps = total_batch_size // (B * T)
 print(f"Grad accumulation steps: {grad_accumulation_steps}")
 
-data_loader = DataLoaderLite(B=B, T=T, split="train")
+train_data = DataLoaderLite(B=B, T=T, split="train")
+val_data = DataLoaderLite(B=B, T=T, split="val")
 
 optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=6e-4, device_type=device)
 
@@ -306,14 +307,23 @@ print("Start training..")
 for step in range(max_steps):
     loss_acc = 0
     t0 = time.time()
+
+    if step % 10 == 0:
+        model.eval()
+        with torch.no_grad():
+            x, y = val_data.next_batch()
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                logits, loss = model(x, y)
+            print(f"Step {step} Val Loss: {loss.item():.4f}")
     
+    model.train()
     if step % 10 == 0:
         print_gpu_memory()
     
     optimizer.zero_grad()
 
     for i in range(grad_accumulation_steps):
-        x, y = data_loader.next_batch()
+        x, y = train_data.next_batch()
         with torch.autocast(device_type='cuda', dtype=torch.float16):
             logits, loss = model(x, y)
         loss = loss / grad_accumulation_steps
@@ -329,7 +339,7 @@ for step in range(max_steps):
     optimizer.step()
     torch.cuda.synchronize()
     dt = time.time() - t0
-    tok_sec = data_loader.B*data_loader.T * grad_accumulation_steps / dt
+    tok_sec = B * T * grad_accumulation_steps / dt
     print(f"Step {step} Time: {dt*1000:.0f}ms Loss: {loss_acc.item():.4f} - norm: {norm:.4f} - lr: {lr:.4f} - tok/sec: {tok_sec:.0f}")
 
 # print(enc.decode(x[0].tolist()))
