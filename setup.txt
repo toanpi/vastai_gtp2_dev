@@ -1,1 +1,3 @@
+
+git clone https://github.com/toanpi/vastai_gtp2_dev.git
 uv pip install -r requirements.txt
