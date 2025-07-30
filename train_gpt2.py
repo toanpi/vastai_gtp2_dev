@@ -283,8 +283,10 @@ def print_gpu_memory():
 
 max_lr = 6e-4
 min_lr = max_lr * 0.1
+# warmup_steps = 715
 warmup_steps = 10
-max_steps = 50
+max_steps = 10 # 10B tokens / total_batch_size (524288) = 19073 steps
+# max_steps = 19073 # 10B tokens / total_batch_size (524288) = 19073 steps
 
 def get_lr(it):
     # 1) linear warmup for warmup_iters steps
