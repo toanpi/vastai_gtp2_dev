@@ -6,34 +6,53 @@ import torch.nn as nn
 from torch.nn import functional as F
 import tiktoken
 import time
+import numpy as np
+import os
 
 # -----------------------------------------------------------------------------
 device = 'cuda'
 master_process = True
 
+def load_tokens(filename):
+    np_tokens = np.load(filename)
+    tokens = torch.tensor(np_tokens, dtype=torch.long, device=device)
+    return tokens
+
 class DataLoaderLite:
-  def __init__(self, B, T):
+  def __init__(self, B, T, split):
     self.B = B
     self.T = T
-    encoder = tiktoken.get_encoding("gpt2")
-    with open('input.txt', 'r') as f:
-      text = f.read()
-    self.tokens = encoder.encode(text)
-    self.tokens = torch.tensor(self.tokens)
-    self.buf = self.tokens.to(device)
     self.cur_pos = 0
+
+    data_root = "edu_fineweb10B"
+    shards = os.listdir(data_root)
+    shards = [s for s in shards if split in s]
+    shards = sorted(shards)
+    shards = [os.path.join(data_root, s) for s in shards]
+    self.shards = shards
+    assert len(shards) > 0, f"no shards found for split {split}"
+    if master_process:
+        print(f"found {len(shards)} shards for split {split}")
+    self.reset()
+
+  def reset(self):
+    self.cur_pos = 0
+    self.current_shard = 0
+    self.tokens = load_tokens(self.shards[self.current_shard])
 
   def next_batch(self):
     size = self.B*self.T
 
-    x = self.buf[self.cur_pos: self.cur_pos + size].view(self.B, self.T)
-    y = self.buf[self.cur_pos + 1: self.cur_pos + 1 + size].view(self.B, self.T)
+    x = self.tokens[self.cur_pos: self.cur_pos + size].view(self.B, self.T)
+    y = self.tokens[self.cur_pos + 1: self.cur_pos + 1 + size].view(self.B, self.T)
 
     self.cur_pos += size
 
-    if self.cur_pos + size + 1 > len(self.buf):
-      print("Resetting buffer")
+    if self.cur_pos + size + 1 > len(self.tokens):
+      self.current_shard += 1
+      self.tokens = load_tokens(self.shards[self.current_shard])
       self.cur_pos = 0
+      print(f"Resetting buffer to shard {self.current_shard}")
     return x, y
 
 class CausalSelfAttention(nn.Module):
@@ -250,7 +269,7 @@ assert total_batch_size % (B * T) == 0
 grad_accumulation_steps = total_batch_size // (B * T)
 print(f"Grad accumulation steps: {grad_accumulation_steps}")
 
-data_loader = DataLoaderLite(B=B, T=T)
+data_loader = DataLoaderLite(B=B, T=T, split="train")
 
 optimizer = model.configure_optimizers(weight_decay=0.1, learning_rate=6e-4, device_type=device)
 
