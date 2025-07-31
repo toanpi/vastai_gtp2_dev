@@ -1,3 +1,3 @@
 git clone https://github.com/toanpi/vastai_gtp2_dev.git
 cd vastai_gtp2_dev
-uv pip install -r requirements.txt
+./setup.sh
